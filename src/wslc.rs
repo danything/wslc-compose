@@ -44,12 +44,13 @@ pub fn output(args: &[String]) -> Result<String, String> {
     let out = command(args)
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| format!("wslc を実行できない ({}): {e}", exe().display()))?;
+        .map_err(|e| tr!("wslc を実行できない ({}): {e}", "cannot run wslc ({}): {e}", exe().display()))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
-        Err(format!(
+        Err(tr!(
             "wslc {} が失敗した: {}",
+            "wslc {} failed: {}",
             args.first().map(String::as_str).unwrap_or(""),
             String::from_utf8_lossy(&out.stderr).trim()
         ))
@@ -58,12 +59,18 @@ pub fn output(args: &[String]) -> Result<String, String> {
 
 /// 端末に出力をそのまま流す
 pub fn run(args: &[String]) -> Result<ExitStatus, String> {
-    command(args).status().map_err(|e| format!("wslc を実行できない ({}): {e}", exe().display()))
+    command(args)
+        .status()
+        .map_err(|e| tr!("wslc を実行できない ({}): {e}", "cannot run wslc ({}): {e}", exe().display()))
 }
 
 pub fn run_ok(args: &[String]) -> Result<(), String> {
     let st = run(args)?;
-    if st.success() { Ok(()) } else { Err(format!("wslc {} が失敗した ({st})", args.join(" "))) }
+    if st.success() {
+        Ok(())
+    } else {
+        Err(tr!("wslc {} が失敗した ({st})", "wslc {} failed ({st})", args.join(" ")))
+    }
 }
 
 /// 存在確認 (inspect が成功するか)

@@ -64,7 +64,7 @@ pub fn spec(p: &Project, s: &Service, image_id: &str, o: &Overrides) -> Result<R
     labels.push((LABEL_WORKDIR.into(), p.dir.display().to_string()));
 
     let mut networks = s.networks.iter().map(|(key, aliases)| {
-        let n = p.network(key).ok_or_else(|| format!("ネットワーク `{key}` がない"))?;
+        let n = p.network(key).ok_or_else(|| tr!("ネットワーク `{key}` がない", "no such network `{key}`"))?;
         // サービス名でも引けるように、サービス名を別名に入れる (compose と同じ)
         let mut al = vec![s.name.clone()];
         al.extend(aliases.iter().cloned());
@@ -97,7 +97,7 @@ pub fn spec(p: &Project, s: &Service, image_id: &str, o: &Overrides) -> Result<R
         match &m.source {
             MountSource::Bind(path) => push!("--volume", format!("{}:{}{ro}", path.display(), m.target)),
             MountSource::Volume(key) => {
-                let v = p.volume(key).ok_or_else(|| format!("ボリューム `{key}` がない"))?;
+                let v = p.volume(key).ok_or_else(|| tr!("ボリューム `{key}` がない", "no such volume `{key}`"))?;
                 push!("--volume", format!("{}:{}{ro}", v.name, m.target));
             }
             MountSource::Anonymous => push!("--volume", m.target.clone()),
@@ -197,7 +197,7 @@ pub fn duration_secs(s: &str) -> Result<u64, String> {
     let mut num = String::new();
     let mut chars = s.trim().chars().peekable();
     if s.trim().chars().all(|c| c.is_ascii_digit()) {
-        return s.trim().parse().map_err(|_| format!("不正な時間: {s}"));
+        return s.trim().parse().map_err(|_| tr!("不正な時間: {s}", "invalid duration: {s}"));
     }
     while let Some(c) = chars.next() {
         if c.is_ascii_digit() || c == '.' {
@@ -208,19 +208,19 @@ pub fn duration_secs(s: &str) -> Result<u64, String> {
         if c == 'm' && chars.peek() == Some(&'s') {
             unit.push(chars.next().unwrap());
         }
-        let n: f64 = num.parse().map_err(|_| format!("不正な時間: {s}"))?;
+        let n: f64 = num.parse().map_err(|_| tr!("不正な時間: {s}", "invalid duration: {s}"))?;
         num.clear();
         let ms = match unit.as_str() {
             "h" => n * 3_600_000.0,
             "m" => n * 60_000.0,
             "s" => n * 1000.0,
             "ms" => n,
-            _ => return Err(format!("不正な時間: {s}")),
+            _ => return Err(tr!("不正な時間: {s}", "invalid duration: {s}")),
         };
         total_ms += ms as u64;
     }
     if !num.is_empty() {
-        return Err(format!("不正な時間: {s}"));
+        return Err(tr!("不正な時間: {s}", "invalid duration: {s}"));
     }
     Ok(total_ms.div_ceil(1000))
 }

@@ -136,7 +136,10 @@ impl Project {
         } else {
             for n in names {
                 if self.service(n).is_none() {
-                    return Err(format!("サービス `{n}` がない (profiles で無効になっている可能性もある)"));
+                    return Err(tr!(
+                        "サービス `{n}` がない (profiles で無効になっている可能性もある)",
+                        "no such service `{n}` (it may be disabled by profiles)"
+                    ));
                 }
             }
             names.to_vec()
@@ -154,9 +157,15 @@ impl Project {
                 return Ok(());
             }
             if visiting.iter().any(|v| v == name) {
-                return Err(format!("depends_on が循環している: {} -> {name}", visiting.join(" -> ")));
+                return Err(tr!(
+                    "depends_on が循環している: {} -> {name}",
+                    "circular depends_on: {} -> {name}",
+                    visiting.join(" -> ")
+                ));
             }
-            let s = p.service(name).ok_or_else(|| format!("depends_on の `{name}` がない"))?;
+            let s = p
+                .service(name)
+                .ok_or_else(|| tr!("depends_on の `{name}` がない", "depends_on refers to missing service `{name}`"))?;
             visiting.push(name.to_string());
             if with_deps {
                 for (d, _) in &s.depends_on {
@@ -201,7 +210,7 @@ pub fn load(opts: &LoadOptions) -> Result<Project, String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let file = match &opts.file {
         Some(f) => std::path::absolute(f).map_err(|e| e.to_string())?,
-        None => find_file(&cwd).ok_or_else(|| format!("{} が見つからない", FILE_NAMES.join(" / ")))?,
+        None => find_file(&cwd).ok_or_else(|| tr!("{} が見つからない", "{} not found", FILE_NAMES.join(" / ")))?,
     };
     let dir = file.parent().unwrap_or(&cwd).to_path_buf();
     let src = std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
@@ -222,7 +231,7 @@ pub fn load_str(src: &str, dir: &Path, env: &Env, opts: &LoadOptions) -> Result<
         .unwrap_or_else(|| dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
     let name = normalize_project_name(&name);
     if name.is_empty() {
-        return Err("プロジェクト名を決められない (-p で指定する)".into());
+        return Err(tr!("プロジェクト名を決められない (-p で指定する)", "cannot determine the project name (use -p)"));
     }
 
     let mut profiles = opts.profiles.clone();
@@ -259,7 +268,8 @@ pub fn load_str(src: &str, dir: &Path, env: &Env, opts: &LoadOptions) -> Result<
         });
     }
 
-    let services_v = root.get("services").and_then(Value::as_map).ok_or("services がない")?;
+    let services_v =
+        root.get("services").and_then(Value::as_map).ok_or_else(|| tr!("services がない", "no services"))?;
     let mut services = Vec::new();
     let mut uses_default_network = false;
     for (sname, sv) in services_v {
@@ -295,7 +305,7 @@ pub fn load_str(src: &str, dir: &Path, env: &Env, opts: &LoadOptions) -> Result<
                 services.push(s);
                 added = true;
             } else {
-                return Err(format!("depends_on の `{m}` がない"));
+                return Err(tr!("depends_on の `{m}` がない", "depends_on refers to missing service `{m}`"));
             }
         }
         if !added {
@@ -316,14 +326,22 @@ pub fn load_str(src: &str, dir: &Path, env: &Env, opts: &LoadOptions) -> Result<
     for s in &services {
         for (n, _) in &s.networks {
             if !networks.iter().any(|x| &x.key == n) {
-                return Err(format!("services.{}: networks の `{n}` がトップレベルの networks にない", s.name));
+                return Err(tr!(
+                    "services.{}: networks の `{n}` がトップレベルの networks にない",
+                    "services.{}: network `{n}` is not defined in top-level networks",
+                    s.name
+                ));
             }
         }
         for m in &s.volumes {
             if let MountSource::Volume(v) = &m.source
                 && !volumes.iter().any(|x| &x.key == v)
             {
-                return Err(format!("services.{}: volumes の `{v}` がトップレベルの volumes にない", s.name));
+                return Err(tr!(
+                    "services.{}: volumes の `{v}` がトップレベルの volumes にない",
+                    "services.{}: volume `{v}` is not defined in top-level volumes",
+                    s.name
+                ));
             }
         }
     }
@@ -373,15 +391,21 @@ const KNOWN_KEYS: &[&str] = &[
 ];
 
 fn service(name: &str, v: &Value, dir: &Path, warnings: &mut Vec<String>) -> Result<Service, String> {
-    let m = v.as_map().ok_or("マップではない")?;
+    let m = v.as_map().ok_or_else(|| tr!("マップではない", "not a map"))?;
     for (k, _) in m {
         if !KNOWN_KEYS.contains(&k.as_str()) && !k.starts_with("x-") {
-            warnings.push(format!("services.{name}.{k} には対応していないので無視する"));
+            warnings.push(tr!(
+                "services.{name}.{k} には対応していないので無視する",
+                "services.{name}.{k} is not supported and is ignored"
+            ));
         }
     }
     for k in ["restart", "init"] {
         if v.get(k).is_some() {
-            warnings.push(format!("services.{name}.{k} は wslc に対応する機能がないので無視する"));
+            warnings.push(tr!(
+                "services.{name}.{k} は wslc に対応する機能がないので無視する",
+                "services.{name}.{k} has no wslc equivalent and is ignored"
+            ));
         }
     }
 
@@ -402,7 +426,7 @@ fn service(name: &str, v: &Value, dir: &Path, warnings: &mut Vec<String>) -> Res
     };
     let image = v.get("image").and_then(Value::as_str).map(str::to_string);
     if image.is_none() && build.is_none() {
-        return Err("image か build が必要".into());
+        return Err(tr!("image か build が必要", "image or build is required"));
     }
 
     let mut environment = Vec::new();
@@ -433,7 +457,7 @@ fn service(name: &str, v: &Value, dir: &Path, warnings: &mut Vec<String>) -> Res
         None | Some(Value::Null) => vec![("default".to_string(), vec![])],
         Some(Value::Seq(items)) => items.iter().filter_map(Value::as_str).map(|n| (n.to_string(), vec![])).collect(),
         Some(Value::Map(entries)) => entries.iter().map(|(n, cfg)| (n.clone(), str_list(cfg.get("aliases")))).collect(),
-        _ => return Err("networks が不正".into()),
+        _ => return Err(tr!("networks が不正", "invalid networks")),
     };
 
     let depends_on = match v.get("depends_on") {
@@ -448,12 +472,17 @@ fn service(name: &str, v: &Value, dir: &Path, warnings: &mut Vec<String>) -> Res
                     None | Some("service_started") => Condition::Started,
                     Some("service_healthy") => Condition::Healthy,
                     Some("service_completed_successfully") => Condition::CompletedSuccessfully,
-                    Some(other) => return Err(format!("depends_on.{n}.condition `{other}` には対応していない")),
+                    Some(other) => {
+                        return Err(tr!(
+                            "depends_on.{n}.condition `{other}` には対応していない",
+                            "depends_on.{n}.condition `{other}` is not supported"
+                        ));
+                    }
                 };
                 Ok((n.clone(), c))
             })
             .collect::<Result<_, String>>()?,
-        _ => return Err("depends_on が不正".into()),
+        _ => return Err(tr!("depends_on が不正", "invalid depends_on")),
     };
 
     let healthcheck = match v.get("healthcheck") {
@@ -470,10 +499,15 @@ fn service(name: &str, v: &Value, dir: &Path, warnings: &mut Vec<String>) -> Res
                         Some("NONE") => None,
                         Some("CMD-SHELL") => Some(parts[1..].join(" ")),
                         Some("CMD") => Some(parts[1..].iter().map(|p| shell_quote(p)).collect::<Vec<_>>().join(" ")),
-                        _ => return Err("healthcheck.test は CMD / CMD-SHELL / NONE で始める".into()),
+                        _ => {
+                            return Err(tr!(
+                                "healthcheck.test は CMD / CMD-SHELL / NONE で始める",
+                                "healthcheck.test must start with CMD, CMD-SHELL or NONE"
+                            ));
+                        }
                     }
                 }
-                _ => return Err("healthcheck.test が不正".into()),
+                _ => return Err(tr!("healthcheck.test が不正", "invalid healthcheck.test")),
             };
             let get = |k: &str| h.get(k).and_then(Value::as_str).map(str::to_string);
             Some(Healthcheck {
@@ -557,14 +591,18 @@ fn mount(v: &Value, dir: &Path) -> Result<Mount, String> {
         };
         return Ok(Mount { source, target: target.to_string(), read_only });
     }
-    let target = v.get("target").and_then(Value::as_str).ok_or("volumes の target がない")?.to_string();
+    let target = v
+        .get("target")
+        .and_then(Value::as_str)
+        .ok_or_else(|| tr!("volumes の target がない", "volumes: missing target"))?
+        .to_string();
     let read_only = v.get("read_only").and_then(Value::as_bool).unwrap_or(false);
     let src = v.get("source").and_then(Value::as_str);
     let source = match (v.get("type").and_then(Value::as_str).unwrap_or("volume"), src) {
         ("bind", Some(p)) => MountSource::Bind(resolve(dir, p)),
         ("volume", Some(n)) => MountSource::Volume(n.to_string()),
         ("volume", None) => MountSource::Anonymous,
-        (t, _) => return Err(format!("volumes の type `{t}` には対応していない")),
+        (t, _) => return Err(tr!("volumes の type `{t}` には対応していない", "volumes: type `{t}` is not supported")),
     };
     Ok(Mount { source, target, read_only })
 }
@@ -573,7 +611,10 @@ fn port(v: &Value) -> Result<String, String> {
     if let Some(s) = v.as_str() {
         return Ok(s.to_string());
     }
-    let target = v.get("target").and_then(Value::as_str).ok_or("ports の target がない")?;
+    let target = v
+        .get("target")
+        .and_then(Value::as_str)
+        .ok_or_else(|| tr!("ports の target がない", "ports: missing target"))?;
     let mut s = String::new();
     if let Some(ip) = v.get("host_ip").and_then(Value::as_str) {
         s.push_str(ip);
@@ -596,7 +637,7 @@ fn command(v: Option<&Value>) -> Result<Option<Vec<String>>, String> {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Str { text, .. }) => shell_split(text).map(Some),
         Some(Value::Seq(items)) => Ok(Some(items.iter().map(|i| i.as_str().unwrap_or("").to_string()).collect())),
-        _ => Err("command / entrypoint が不正".into()),
+        _ => Err(tr!("command / entrypoint が不正", "invalid command / entrypoint")),
     }
 }
 
@@ -627,7 +668,7 @@ fn env_list(v: Option<&Value>) -> Result<Vec<(String, Option<String>)>, String> 
                 None => (s.to_string(), None),
             })
             .collect()),
-        _ => Err("マップか `KEY=value` のリストにする".into()),
+        _ => Err(tr!("マップか `KEY=value` のリストにする", "expected a map or a list of `KEY=value`")),
     }
 }
 
@@ -651,7 +692,7 @@ pub fn shell_split(s: &str) -> Result<Vec<String>, String> {
                     match chars.next() {
                         Some('\'') => break,
                         Some(c) => cur.push(c),
-                        None => return Err(format!("引用符が閉じていない: {s}")),
+                        None => return Err(tr!("引用符が閉じていない: {s}", "unclosed quote: {s}")),
                     }
                 }
             }
@@ -666,10 +707,10 @@ pub fn shell_split(s: &str) -> Result<Vec<String>, String> {
                                 cur.push('\\');
                                 cur.push(c);
                             }
-                            None => return Err(format!("引用符が閉じていない: {s}")),
+                            None => return Err(tr!("引用符が閉じていない: {s}", "unclosed quote: {s}")),
                         },
                         Some(c) => cur.push(c),
-                        None => return Err(format!("引用符が閉じていない: {s}")),
+                        None => return Err(tr!("引用符が閉じていない: {s}", "unclosed quote: {s}")),
                     }
                 }
             }

@@ -34,7 +34,11 @@ fn ensure_networks(p: &Project, services: &[&Service]) -> R {
             continue;
         }
         if n.external {
-            return Err(format!("外部ネットワーク `{}` がない (先に作る)", n.name));
+            return Err(tr!(
+                "外部ネットワーク `{}` がない (先に作る)",
+                "external network `{}` does not exist (create it first)",
+                n.name
+            ));
         }
         let mut a = vec![st("network"), st("create")];
         if let Some(d) = &n.driver {
@@ -54,7 +58,7 @@ fn ensure_networks(p: &Project, services: &[&Service]) -> R {
             n.name.clone(),
         ]);
         wslc::output(&a)?;
-        info(format!("ネットワーク {} を作成", n.name));
+        info(tr!("ネットワーク {} を作成", "Created network {}", n.name));
     }
     Ok(())
 }
@@ -67,7 +71,11 @@ fn ensure_volumes(p: &Project, services: &[&Service]) -> R {
             continue;
         }
         if v.external {
-            return Err(format!("外部ボリューム `{}` がない (先に作る)", v.name));
+            return Err(tr!(
+                "外部ボリューム `{}` がない (先に作る)",
+                "external volume `{}` does not exist (create it first)",
+                v.name
+            ));
         }
         let mut a = vec![st("volume"), st("create")];
         if let Some(d) = &v.driver {
@@ -84,7 +92,7 @@ fn ensure_volumes(p: &Project, services: &[&Service]) -> R {
             v.name.clone(),
         ]);
         wslc::output(&a)?;
-        info(format!("ボリューム {} を作成", v.name));
+        info(tr!("ボリューム {} を作成", "Created volume {}", v.name));
     }
     Ok(())
 }
@@ -96,7 +104,7 @@ fn image_id(image: &str) -> Option<String> {
 pub fn build_service(p: &Project, s: &Service, no_cache: bool, pull: bool) -> R {
     let Some(b) = &s.build else { return Ok(()) };
     let image = p.image_name(s);
-    info(format!("{} をビルド ({image})", s.name));
+    info(tr!("{} をビルド ({image})", "Building {} ({image})", s.name));
     let mut a = vec![st("image"), st("build"), st("--tag"), image];
     if let Some(f) = &b.dockerfile {
         a.extend([st("--file"), f.display().to_string()]);
@@ -118,7 +126,7 @@ pub fn build_service(p: &Project, s: &Service, no_cache: bool, pull: bool) -> R 
 }
 
 fn pull_image(image: &str) -> R {
-    info(format!("{image} を取得"));
+    info(tr!("{image} を取得", "Pulling {image}"));
     wslc::run_ok(&[st("image"), st("pull"), st(image)])
 }
 
@@ -130,7 +138,7 @@ fn ensure_image(p: &Project, s: &Service, build: bool) -> Result<String, String>
     } else if s.build.is_none() && image_id(&image).is_none() {
         pull_image(&image)?;
     }
-    image_id(&image).ok_or_else(|| format!("イメージ {image} がない"))
+    image_id(&image).ok_or_else(|| tr!("イメージ {image} がない", "image {image} not found"))
 }
 
 fn wait_for(p: &Project, s: &Service, timeout: Duration) -> R {
@@ -138,7 +146,7 @@ fn wait_for(p: &Project, s: &Service, timeout: Duration) -> R {
         if *cond == Condition::Started {
             continue;
         }
-        let d = p.service(dep).ok_or_else(|| format!("`{dep}` がない"))?;
+        let d = p.service(dep).ok_or_else(|| tr!("`{dep}` がない", "no such service `{dep}`"))?;
         let name = p.container_name(d);
         let start = Instant::now();
         let mut said = false;
@@ -152,12 +160,15 @@ fn wait_for(p: &Project, s: &Service, timeout: Duration) -> R {
                     match h {
                         Some("healthy") => break,
                         None if !state.is_empty() => {
-                            return Err(format!("{dep} にヘルスチェックがないので service_healthy を待てない"));
+                            return Err(tr!(
+                                "{dep} にヘルスチェックがないので service_healthy を待てない",
+                                "{dep} has no healthcheck, cannot wait for service_healthy"
+                            ));
                         }
                         _ => {}
                     }
                     if state == "exited" {
-                        return Err(format!("{dep} が終了した"));
+                        return Err(tr!("{dep} が終了した", "{dep} exited"));
                     }
                 }
                 Condition::CompletedSuccessfully => {
@@ -167,17 +178,21 @@ fn wait_for(p: &Project, s: &Service, timeout: Duration) -> R {
                         if code == 0 {
                             break;
                         }
-                        return Err(format!("{dep} が終了コード {code} で終わった"));
+                        return Err(tr!("{dep} が終了コード {code} で終わった", "{dep} exited with code {code}"));
                     }
                 }
                 Condition::Started => unreachable!(),
             }
             if !said {
-                info(format!("{} が {dep} を待っている", s.name));
+                info(tr!("{} が {dep} を待っている", "{} is waiting for {dep}", s.name));
                 said = true;
             }
             if start.elapsed() > timeout {
-                return Err(format!("{dep} を {} 秒待ったがだめだった", timeout.as_secs()));
+                return Err(tr!(
+                    "{dep} を {} 秒待ったがだめだった",
+                    "gave up waiting for {dep} after {} seconds",
+                    timeout.as_secs()
+                ));
             }
             thread::sleep(Duration::from_millis(500));
         }
@@ -208,17 +223,17 @@ pub fn up(p: &Project, names: &[String], o: &UpOptions) -> R {
         match cur {
             Some(c) if !o.force_recreate && c.label(LABEL_HASH) == Some(spec.hash.as_str()) => {
                 if c.running() {
-                    info(format!("{} は最新", spec.name));
+                    info(tr!("{} は最新", "{} is up to date", spec.name));
                 } else {
                     wait_for(p, s, o.wait_timeout)?;
                     wslc::output(&[st("container"), st("start"), spec.name.clone()])?;
-                    info(format!("{} を起動", spec.name));
+                    info(tr!("{} を起動", "Started {}", spec.name));
                 }
                 continue;
             }
             Some(_) => {
                 wslc::output(&[st("container"), st("remove"), st("--force"), spec.name.clone()])?;
-                info(format!("{} を作り直す", spec.name));
+                info(tr!("{} を作り直す", "Recreating {}", spec.name));
             }
             None => {}
         }
@@ -234,7 +249,7 @@ pub fn up(p: &Project, names: &[String], o: &UpOptions) -> R {
             c.extend([net.clone(), spec.name.clone()]);
             wslc::output(&c)?;
         }
-        info(format!("{} を起動", spec.name));
+        info(tr!("{} を起動", "Started {}", spec.name));
     }
     if o.detach {
         return Ok(());
@@ -247,7 +262,7 @@ pub fn up(p: &Project, names: &[String], o: &UpOptions) -> R {
         names.iter().enumerate().map(|(i, n)| follow_logs(n.clone(), prefix(n, width, i), true, None, false)).collect();
     loop {
         if crate::signal::interrupted() {
-            info("\n停止中... (もう一度 Ctrl+C で強制終了)");
+            info(tr!("\n停止中... (もう一度 Ctrl+C で強制終了)", "\nStopping... (press Ctrl+C again to force)"));
             break;
         }
         if handles.iter().all(|h| h.is_finished()) {
@@ -268,9 +283,13 @@ fn orphans(p: &Project, existing: &[Container], remove: bool) -> R {
         }
         if remove {
             wslc::output(&[st("container"), st("remove"), st("--force"), c.name.clone()])?;
-            info(format!("孤立したコンテナ {} を削除", c.name));
+            info(tr!("孤立したコンテナ {} を削除", "Removed orphan container {}", c.name));
         } else {
-            info(format!("警告: compose ファイルにないサービスのコンテナ {} がある (--remove-orphans で削除)", c.name));
+            info(tr!(
+                "警告: compose ファイルにないサービスのコンテナ {} がある (--remove-orphans で削除)",
+                "warning: container {} belongs to a service not in the compose file (remove it with --remove-orphans)",
+                c.name
+            ));
         }
     }
     Ok(())
@@ -283,23 +302,27 @@ pub fn down(p: &Project, volumes: bool, remove_orphans: bool) -> R {
     for c in &existing {
         let svc = c.label(LABEL_SERVICE).unwrap_or("");
         if !remove_orphans && p.service(svc).is_none() && c.label(LABEL_ONEOFF) != Some("True") {
-            info(format!("警告: 孤立したコンテナ {} は残す (--remove-orphans で削除)", c.name));
+            info(tr!(
+                "警告: 孤立したコンテナ {} は残す (--remove-orphans で削除)",
+                "warning: keeping orphan container {} (remove it with --remove-orphans)",
+                c.name
+            ));
             continue;
         }
         wslc::output(&[st("container"), st("remove"), st("--force"), c.name.clone()])?;
-        info(format!("{} を削除", c.name));
+        info(tr!("{} を削除", "Removed {}", c.name));
     }
     for n in wslc::list_names("network", LABEL_PROJECT, &p.name)? {
         if p.networks.iter().any(|x| x.external && x.name == n) {
             continue;
         }
         wslc::output(&[st("network"), st("remove"), n.clone()])?;
-        info(format!("ネットワーク {n} を削除"));
+        info(tr!("ネットワーク {n} を削除", "Removed network {n}"));
     }
     if volumes {
         for v in wslc::list_names("volume", LABEL_PROJECT, &p.name)? {
             wslc::output(&[st("volume"), st("remove"), v.clone()])?;
-            info(format!("ボリューム {v} を削除"));
+            info(tr!("ボリューム {v} を削除", "Removed volume {v}"));
         }
     }
     Ok(())
@@ -315,7 +338,7 @@ pub fn lifecycle(p: &Project, names: &[String], verb: &str) -> R {
     let targets: Vec<String> =
         services.iter().map(|s| p.container_name(s)).filter(|n| existing.iter().any(|c| &c.name == n)).collect();
     if targets.is_empty() {
-        info("対象のコンテナがない");
+        info(tr!("対象のコンテナがない", "no matching containers"));
         return Ok(());
     }
     let mut a = vec![st("container"), st(verb)];
@@ -390,7 +413,7 @@ pub fn logs(p: &Project, names: &[String], o: &LogOptions) -> R {
     let targets: Vec<String> =
         services.iter().map(|s| p.container_name(s)).filter(|n| existing.iter().any(|c| &c.name == n)).collect();
     if targets.is_empty() {
-        info("ログを出すコンテナがない");
+        info(tr!("ログを出すコンテナがない", "no containers to show logs for"));
         return Ok(());
     }
     // 1 つで prefix なしなら、そのまま流す
@@ -502,7 +525,7 @@ pub struct ExecOptions {
 }
 
 pub fn exec(p: &Project, service: &str, cmd: &[String], o: &ExecOptions) -> Result<i32, String> {
-    let s = p.service(service).ok_or_else(|| format!("サービス `{service}` がない"))?;
+    let s = p.service(service).ok_or_else(|| tr!("サービス `{service}` がない", "no such service `{service}`"))?;
     let name = p.container_name(s);
     let mut a = vec![st("container"), st("exec")];
     if o.detach {
@@ -545,7 +568,7 @@ pub struct RunOptions {
 
 /// 1 回だけのコンテナ (`compose run`)
 pub fn run_once(p: &Project, service: &str, cmd: &[String], o: &RunOptions) -> Result<i32, String> {
-    let s = p.service(service).ok_or_else(|| format!("サービス `{service}` がない"))?;
+    let s = p.service(service).ok_or_else(|| tr!("サービス `{service}` がない", "no such service `{service}`"))?;
     if !o.no_deps && !s.depends_on.is_empty() {
         let deps: Vec<String> = s.depends_on.iter().map(|(d, _)| d.clone()).collect();
         up(
@@ -591,7 +614,7 @@ pub fn run_once(p: &Project, service: &str, cmd: &[String], o: &RunOptions) -> R
     }
     a.extend(spec.args.iter().cloned());
     if !spec.extra_networks.is_empty() {
-        info("警告: run では最初のネットワークにだけつなぐ");
+        info(tr!("警告: run では最初のネットワークにだけつなぐ", "warning: run connects to the first network only"));
     }
     Ok(wslc::run(&a)?.code().unwrap_or(1))
 }
@@ -609,7 +632,7 @@ pub fn build(p: &Project, names: &[String], no_cache: bool, pull: bool) -> R {
         any = true;
     }
     if !any {
-        info("ビルドするサービスがない");
+        info(tr!("ビルドするサービスがない", "no services to build"));
     }
     Ok(())
 }
@@ -638,7 +661,7 @@ pub fn config(p: &Project, services_only: bool) -> R {
     }
     for s in p.ordered(&[], true)? {
         if let Some(b) = &s.build {
-            println!("# {} は {} からビルド", s.name, b.context.display());
+            println!("{}", tr!("# {} は {} からビルド", "# {} is built from {}", s.name, b.context.display()));
         }
         let spec = run::spec(p, s, "<image-id>", &Overrides::default())?;
         let args: Vec<String> = spec.args.iter().map(|a| crate::compose::shell_quote(a)).collect();

@@ -71,7 +71,7 @@ pub struct Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} 行目: {}", self.line, self.message)
+        write!(f, "{}", tr!("{} 行目: {}", "line {}: {}", self.line, self.message))
     }
 }
 
@@ -95,7 +95,10 @@ pub fn parse(src: &str) -> Result<Value> {
         raw.push(l.to_string());
         let indent = l.len() - l.trim_start_matches(' ').len();
         if l[indent..].starts_with('\t') {
-            return Err(Error { line: i + 1, message: "インデントにタブは使えない".into() });
+            return Err(Error {
+                line: i + 1,
+                message: tr!("インデントにタブは使えない", "tabs cannot be used for indentation"),
+            });
         }
         let text = strip_comment(&l[indent..]);
         let text = text.trim_end();
@@ -103,7 +106,10 @@ pub fn parse(src: &str) -> Result<Value> {
             continue;
         }
         if text == "..." || (text.starts_with("---") && i > 0 && !lines.is_empty()) {
-            return Err(Error { line: i + 1, message: "複数ドキュメントには対応していない".into() });
+            return Err(Error {
+                line: i + 1,
+                message: tr!("複数ドキュメントには対応していない", "multiple documents are not supported"),
+            });
         }
         lines.push(Line { no: i + 1, indent, text: text.to_string() });
     }
@@ -114,7 +120,7 @@ pub fn parse(src: &str) -> Result<Value> {
     let indent = p.lines[0].indent;
     let v = p.block(indent)?;
     if let Some(l) = p.lines.get(p.pos) {
-        return Err(Error { line: l.no, message: "インデントが合わない".into() });
+        return Err(Error { line: l.no, message: tr!("インデントが合わない", "inconsistent indentation") });
     }
     Ok(v)
 }
@@ -214,7 +220,7 @@ impl Parser {
         while let Some(l) = self.peek() {
             if l.indent != indent {
                 if l.indent > indent {
-                    return self.err(l.no, "インデントが深すぎる");
+                    return self.err(l.no, tr!("インデントが深すぎる", "unexpected indentation"));
                 }
                 break;
             }
@@ -224,7 +230,7 @@ impl Parser {
             let no = l.no;
             let text = l.text.clone();
             let Some((key, rest)) = split_key(&text) else {
-                return self.err(no, format!("`key: value` の形になっていない: {text}"));
+                return self.err(no, tr!("`key: value` の形になっていない: {text}", "expected `key: value`: {text}"));
             };
             let key = unquote_key(key, no)?;
             let rest = rest.trim().to_string();
@@ -234,19 +240,24 @@ impl Parser {
                 match value {
                     Value::Map(_) => merges.push(value),
                     Value::Seq(vs) => merges.extend(vs),
-                    _ => return self.err(no, "<< にはマップかマップのリストを指定する"),
+                    _ => {
+                        return self.err(
+                            no,
+                            tr!("<< にはマップかマップのリストを指定する", "<< takes a map or a list of maps"),
+                        );
+                    }
                 }
                 continue;
             }
             if entries.iter().any(|(k, _)| *k == key) {
-                return self.err(no, format!("キー `{key}` が重複している"));
+                return self.err(no, tr!("キー `{key}` が重複している", "duplicate key `{key}`"));
             }
             entries.push((key, value));
         }
         // マージキーは、明示したキーを上書きしない。複数あるときは先のものが優先
         for m in merges {
             let Value::Map(ms) = m else {
-                return self.err(0, "<< にはマップを指定する");
+                return self.err(0, tr!("<< にはマップを指定する", "<< takes a map"));
             };
             for (k, v) in ms {
                 if !entries.iter().any(|(ek, _)| *ek == k) {
@@ -289,7 +300,7 @@ impl Parser {
         } else if let Some(name) = text.strip_prefix('*') {
             match self.anchors.get(name) {
                 Some(v) => v.clone(),
-                None => return self.err(no, format!("アンカー `{name}` が定義されていない")),
+                None => return self.err(no, tr!("アンカー `{name}` が定義されていない", "undefined anchor `{name}`")),
             }
         } else if text.starts_with('|') || text.starts_with('>') {
             self.block_scalar(text, indent, no)?
@@ -298,7 +309,7 @@ impl Parser {
             // 複数行にまたがるフローは、括弧が閉じるまで行を足す
             while !flow_balanced(&src) {
                 let Some(l) = self.peek() else {
-                    return self.err(no, "フローの括弧が閉じていない");
+                    return self.err(no, tr!("フローの括弧が閉じていない", "unclosed flow collection"));
                 };
                 src.push(' ');
                 src.push_str(&l.text);
@@ -308,7 +319,8 @@ impl Parser {
             let v = fp.value()?;
             fp.ws();
             if fp.i != src.len() {
-                return self.err(no, "フローの後ろに余計な文字がある");
+                return self
+                    .err(no, tr!("フローの後ろに余計な文字がある", "unexpected characters after flow collection"));
             }
             v
         } else {
@@ -324,7 +336,13 @@ impl Parser {
         let folded = header.starts_with('>');
         let chomp = &header[1..];
         if !matches!(chomp, "" | "-" | "+") {
-            return self.err(no, "ブロックスカラーのインデント指定には対応していない");
+            return self.err(
+                no,
+                tr!(
+                    "ブロックスカラーのインデント指定には対応していない",
+                    "block scalar indentation indicators are not supported"
+                ),
+            );
         }
         // コメント除去済みの行ではなく元の行を使う (# を含められるように)
         let mut body: Vec<String> = Vec::new();
@@ -417,7 +435,7 @@ fn unquote_key(key: &str, no: usize) -> Result<String> {
     match scalar(key, no)? {
         Value::Str { text, .. } => Ok(text),
         Value::Null => Ok(String::new()),
-        _ => Err(Error { line: no, message: "キーにはスカラーを使う".into() }),
+        _ => Err(Error { line: no, message: tr!("キーにはスカラーを使う", "keys must be scalars") }),
     }
 }
 
@@ -425,13 +443,17 @@ fn scalar(text: &str, no: usize) -> Result<Value> {
     let t = text.trim();
     if let Some(inner) = t.strip_prefix('"') {
         let Some(inner) = inner.strip_suffix('"') else {
-            return Err(Error { line: no, message: "二重引用符が閉じていない".into() });
+            return Err(Error {
+                line: no, message: tr!("二重引用符が閉じていない", "unclosed double quote")
+            });
         };
         return Ok(Value::Str { text: unescape_double(inner, no)?, quoted: true });
     }
     if let Some(inner) = t.strip_prefix('\'') {
         let Some(inner) = inner.strip_suffix('\'') else {
-            return Err(Error { line: no, message: "単一引用符が閉じていない".into() });
+            return Err(Error {
+                line: no, message: tr!("単一引用符が閉じていない", "unclosed single quote")
+            });
         };
         return Ok(Value::Str { text: inner.replace("''", "'"), quoted: true });
     }
@@ -449,7 +471,9 @@ fn unescape_double(s: &str, no: usize) -> Result<String> {
             out.push(c);
             continue;
         }
-        let e = chars.next().ok_or(Error { line: no, message: "末尾の \\ が不正".into() })?;
+        let e = chars
+            .next()
+            .ok_or_else(|| Error { line: no, message: tr!("末尾の \\ が不正", "trailing \\ is invalid") })?;
         match e {
             'n' => out.push('\n'),
             't' => out.push('\t'),
@@ -466,13 +490,17 @@ fn unescape_double(s: &str, no: usize) -> Result<String> {
                     _ => 8,
                 };
                 let hex: String = chars.by_ref().take(n).collect();
-                let c = u32::from_str_radix(&hex, 16)
-                    .ok()
-                    .and_then(char::from_u32)
-                    .ok_or(Error { line: no, message: format!("不正なエスケープ \\{e}{hex}") })?;
+                let c = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32).ok_or_else(|| Error {
+                    line: no,
+                    message: tr!("不正なエスケープ \\{e}{hex}", "invalid escape \\{e}{hex}"),
+                })?;
                 out.push(c);
             }
-            other => return Err(Error { line: no, message: format!("不正なエスケープ \\{other}") }),
+            other => {
+                return Err(Error {
+                    line: no, message: tr!("不正なエスケープ \\{other}", "invalid escape \\{other}")
+                });
+            }
         }
     }
     Ok(out)
@@ -536,11 +564,11 @@ impl Flow<'_> {
                 let name = &self.src[start..self.i];
                 match self.anchors.get(name) {
                     Some(v) => Ok(v.clone()),
-                    None => self.err(&format!("アンカー `{name}` が定義されていない")),
+                    None => self.err(&tr!("アンカー `{name}` が定義されていない", "undefined anchor `{name}`")),
                 }
             }
             Some(_) => self.scalar(),
-            None => self.err("値がない"),
+            None => self.err(&tr!("値がない", "missing value")),
         }
     }
 
@@ -565,7 +593,7 @@ impl Flow<'_> {
             }
             self.i += 1;
             if self.i > self.s.len() {
-                return self.err("引用符が閉じていない");
+                return self.err(&tr!("引用符が閉じていない", "unclosed quote"));
             }
         } else {
             while self.i < self.s.len() && !matches!(self.s[self.i], b',' | b']' | b'}') {
@@ -589,7 +617,7 @@ impl Flow<'_> {
                     self.i += 1;
                     return Ok(Value::Seq(items));
                 }
-                None => return self.err("`]` がない"),
+                None => return self.err(&tr!("`]` がない", "missing `]`")),
                 _ => {}
             }
             items.push(self.value()?);
@@ -597,7 +625,7 @@ impl Flow<'_> {
             match self.s.get(self.i) {
                 Some(b',') => self.i += 1,
                 Some(b']') => {}
-                _ => return self.err("フローシーケンスの区切りが不正"),
+                _ => return self.err(&tr!("フローシーケンスの区切りが不正", "invalid separator in flow sequence")),
             }
         }
     }
@@ -612,12 +640,12 @@ impl Flow<'_> {
                     self.i += 1;
                     return Ok(Value::Map(entries));
                 }
-                None => return self.err("`}` がない"),
+                None => return self.err(&tr!("`}}` がない", "missing `}}`")),
                 _ => {}
             }
             let key = match self.scalar()? {
                 Value::Str { text, .. } => text,
-                _ => return self.err("フローマップのキーが不正"),
+                _ => return self.err(&tr!("フローマップのキーが不正", "invalid key in flow mapping")),
             };
             self.ws();
             let value = if self.s.get(self.i) == Some(&b':') {
@@ -631,7 +659,7 @@ impl Flow<'_> {
             match self.s.get(self.i) {
                 Some(b',') => self.i += 1,
                 Some(b'}') => {}
-                _ => return self.err("フローマップの区切りが不正"),
+                _ => return self.err(&tr!("フローマップの区切りが不正", "invalid separator in flow mapping")),
             }
         }
     }

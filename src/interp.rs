@@ -53,7 +53,7 @@ impl Env {
                 out.push('$');
                 rest = r;
             } else if let Some(r) = rest.strip_prefix('{') {
-                let end = matching_brace(r).ok_or_else(|| format!("`${{` が閉じていない: {s}"))?;
+                let end = matching_brace(r).ok_or_else(|| tr!("`${{` が閉じていない: {s}", "unclosed `${{`: {s}"))?;
                 out.push_str(&self.braced(&r[..end])?);
                 rest = &r[end + 1..];
             } else {
@@ -74,7 +74,7 @@ impl Env {
         let n = inner.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(inner.len());
         let (name, op) = inner.split_at(n);
         if name.is_empty() {
-            return Err(format!("変数名がない: ${{{inner}}}"));
+            return Err(tr!("変数名がない: ${{{inner}}}", "missing variable name: ${{{inner}}}"));
         }
         let val = self.get(name);
         let set_nonempty = val.is_some_and(|v| !v.is_empty());
@@ -104,10 +104,14 @@ impl Env {
                     Ok(val.unwrap_or("").to_string())
                 } else {
                     let msg = self.expand(&op[1..])?;
-                    Err(format!("{name} が必要: {}", if msg.is_empty() { "未設定" } else { &msg }))
+                    Err(tr!(
+                        "{name} が必要: {}",
+                        "{name} is required: {}",
+                        if msg.is_empty() { tr!("未設定", "not set") } else { msg.clone() }
+                    ))
                 }
             }
-            _ => Err(format!("不正な変数展開: ${{{inner}}}")),
+            _ => Err(tr!("不正な変数展開: ${{{inner}}}", "invalid interpolation: ${{{inner}}}")),
         }
     }
 
@@ -163,7 +167,7 @@ pub fn parse_env_file(src: &str) -> Result<Vec<(String, String)>, String> {
         };
         let k = k.trim();
         if k.is_empty() || k.contains(' ') {
-            return Err(format!("{} 行目: 不正な行", i + 1));
+            return Err(tr!("{} 行目: 不正な行", "line {}: invalid line", i + 1));
         }
         let v = v.trim();
         let v = if let Some(inner) = v.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {

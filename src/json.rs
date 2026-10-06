@@ -73,7 +73,7 @@ pub fn parse(src: &str) -> Result<Json, Error> {
     let v = p.value()?;
     p.ws();
     if p.i != p.s.len() {
-        return Err(Error(format!("{} バイト目以降に余計な文字がある", p.i)));
+        return Err(Error(tr!("{} バイト目以降に余計な文字がある", "unexpected characters at byte {}", p.i)));
     }
     Ok(v)
 }
@@ -90,7 +90,7 @@ struct P<'a> {
 
 impl P<'_> {
     fn err<T>(&self, m: &str) -> Result<T, Error> {
-        Err(Error(format!("{} ({} バイト目)", m, self.i)))
+        Err(Error(tr!("{} ({} バイト目)", "{} (at byte {})", m, self.i)))
     }
 
     fn ws(&mut self) {
@@ -104,7 +104,7 @@ impl P<'_> {
             self.i += lit.len();
             Ok(())
         } else {
-            self.err(&format!("`{lit}` を期待した"))
+            self.err(&tr!("`{lit}` を期待した", "expected `{lit}`"))
         }
     }
 
@@ -125,7 +125,7 @@ impl P<'_> {
                 }
                 Ok(Json::Num(String::from_utf8_lossy(&self.s[start..self.i]).into_owned()))
             }
-            _ => self.err("値がない"),
+            _ => self.err(&tr!("値がない", "missing value")),
         }
     }
 
@@ -134,14 +134,14 @@ impl P<'_> {
         let mut out = Vec::new();
         loop {
             let Some(&c) = self.s.get(self.i) else {
-                return self.err("文字列が閉じていない");
+                return self.err(&tr!("文字列が閉じていない", "unclosed string"));
             };
             self.i += 1;
             match c {
                 b'"' => break,
                 b'\\' => {
                     let Some(&e) = self.s.get(self.i) else {
-                        return self.err("不正なエスケープ");
+                        return self.err(&tr!("不正なエスケープ", "invalid escape"));
                     };
                     self.i += 1;
                     match e {
@@ -165,19 +165,19 @@ impl P<'_> {
                             let mut buf = [0u8; 4];
                             out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
                         }
-                        _ => return self.err("不正なエスケープ"),
+                        _ => return self.err(&tr!("不正なエスケープ", "invalid escape")),
                     }
                 }
                 _ => out.push(c),
             }
         }
-        String::from_utf8(out).or_else(|_| self.err("UTF-8 ではない"))
+        String::from_utf8(out).or_else(|_| self.err(&tr!("UTF-8 ではない", "invalid UTF-8")))
     }
 
     fn hex4(&mut self) -> Result<u32, Error> {
         let h = self.s.get(self.i..self.i + 4).and_then(|h| std::str::from_utf8(h).ok());
         let Some(v) = h.and_then(|h| u32::from_str_radix(h, 16).ok()) else {
-            return self.err("不正な \\u");
+            return self.err(&tr!("不正な \\u", "invalid \\u escape"));
         };
         self.i += 4;
         Ok(v)
@@ -200,7 +200,7 @@ impl P<'_> {
                     self.i += 1;
                     return Ok(Json::Arr(items));
                 }
-                _ => return self.err("`,` か `]` を期待した"),
+                _ => return self.err(&tr!("`,` か `]` を期待した", "expected `,` or `]`")),
             }
         }
     }
@@ -216,7 +216,7 @@ impl P<'_> {
         loop {
             self.ws();
             if self.s.get(self.i) != Some(&b'"') {
-                return self.err("キーを期待した");
+                return self.err(&tr!("キーを期待した", "expected a key"));
             }
             let k = self.string()?;
             self.ws();
@@ -230,7 +230,7 @@ impl P<'_> {
                     self.i += 1;
                     return Ok(Json::Obj(entries));
                 }
-                _ => return self.err("`,` か `}` を期待した"),
+                _ => return self.err(&tr!("`,` か `}}` を期待した", "expected `,` or `}}`")),
             }
         }
     }
