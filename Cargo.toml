@@ -1,6 +1,6 @@
 [package]
 name = "wslc-compose"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.99"
 description = "compose.yaml を WSL コンテナ (wslc) で動かす"

@@ -1,0 +1,3 @@
+# C ランタイムを静的リンクして、Visual C++ 再頒布可能パッケージなしで動くようにする
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
