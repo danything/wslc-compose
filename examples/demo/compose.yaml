@@ -1,0 +1,33 @@
+# wslc-compose の動作確認用。web が cache (redis) の healthy を待ってから起動し、
+# http://localhost:${WEB_PORT}/ でカウンタを返す
+name: demo
+
+services:
+  web:
+    build:
+      context: ./web
+      args:
+        BASE: ${BASE_IMAGE:-python:3-alpine}
+    ports:
+      - "${WEB_PORT:-18081}:8000"
+    environment:
+      REDIS_HOST: cache
+      GREETING: ${GREETING:?GREETING を .env に書く}
+    volumes:
+      - ./web:/app:ro
+    depends_on:
+      cache:
+        condition: service_healthy
+
+  cache:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 10
+
+volumes:
+  data:
