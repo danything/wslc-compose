@@ -5,6 +5,18 @@
 Run `compose.yaml` on WSL containers (`wslc`). wslc has no Compose support and no Docker-compatible API yet,
 so this implements the commonly used part of docker compose in Rust with no third-party crates.
 
+## Install
+
+Requires Windows 11 with WSL containers (`wslc`).
+
+```powershell
+winget install danything.wslc-compose
+```
+
+Or download `wslc-compose.exe` from [Releases](https://github.com/danything/wslc-compose/releases) and put it on your `PATH`.
+
+## Usage
+
 ```powershell
 wslc-compose up -d
 wslc-compose ps
@@ -15,7 +27,8 @@ wslc-compose down -v
 wslc-compose config   # show the wslc commands that would be run
 ```
 
-See `wslc-compose --help` for all commands. Messages are in Japanese.
+See `wslc-compose --help` for all commands. Messages are shown in Japanese when the Windows display language is
+Japanese, otherwise in English (override with `WSLC_COMPOSE_LANG=en|ja`).
 
 ## Supported Compose features
 

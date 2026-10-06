@@ -5,6 +5,18 @@
 `compose.yaml` を WSL コンテナ (`wslc`) で動かす。wslc には compose も Docker 互換 API もまだないので、
 docker compose のよく使う範囲だけを、依存クレートなしの Rust で実装している。
 
+## インストール
+
+WSL コンテナ (`wslc`) が使える Windows 11 が必要。
+
+```powershell
+winget install danything.wslc-compose
+```
+
+または [Releases](https://github.com/danything/wslc-compose/releases) から `wslc-compose.exe` をダウンロードして `PATH` の通った場所に置く。
+
+## 使い方
+
 ```powershell
 wslc-compose up -d
 wslc-compose ps
@@ -15,7 +27,8 @@ wslc-compose down -v
 wslc-compose config   # 実際に実行する wslc のコマンドを表示
 ```
 
-全コマンドは `wslc-compose --help`。
+全コマンドは `wslc-compose --help`。メッセージは Windows の表示言語が日本語なら日本語、それ以外は英語
+(`WSLC_COMPOSE_LANG=ja|en` で切り替えられる)。
 
 ## 対応している compose の機能
 
