@@ -40,3 +40,17 @@ jobs:
           gh release create $env:GITHUB_REF_NAME wslc-compose.exe SHA256SUMS --repo $env:GITHUB_REPOSITORY --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
+
+  # GITHUB_TOKEN で作ったリリースは別のワークフローを起動しないので、同じワークフローで winget に PR を出す
+  winget:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: danything.wslc-compose
+          release-tag: ${{ github.ref_name }}
+          installers-regex: '\.exe$'
+          fork-user: 5ym
+          # public_repo と workflow のスコープを持つクラシック PAT
+          token: ${{ secrets.WINGET_TOKEN }}

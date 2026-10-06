@@ -56,7 +56,7 @@ No Rust toolchain on Windows is needed: the dev container cross-compiles for Win
 
 ## Release
 
-Pushing a `v*` tag makes CI build on Windows and attach the exe and `SHA256SUMS` to a GitHub release.
+Pushing a `v*` tag makes CI build on Windows, attach the exe and `SHA256SUMS` to a GitHub release, and open an update PR to winget (`microsoft/winget-pkgs`). This needs a classic PAT with the `public_repo` and `workflow` scopes in the `WINGET_TOKEN` secret.
 
 ## License
 

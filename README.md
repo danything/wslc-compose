@@ -56,7 +56,7 @@ Windows に Rust を入れず、wslc のコンテナで Windows 向けにクロ�
 
 ## リリース
 
-`v*` のタグを push すると、CI が Windows でビルドして exe と `SHA256SUMS` をリリースに添付する。
+`v*` のタグを push すると、CI が Windows でビルドして exe と `SHA256SUMS` をリリースに添付し、winget (`microsoft/winget-pkgs`) に更新の PR を出す (シークレット `WINGET_TOKEN` に `public_repo` と `workflow` スコープのクラシック PAT が必要)。
 
 ## ライセンス
 
