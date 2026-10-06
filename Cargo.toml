@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 description = "compose.yaml を WSL コンテナ (wslc) で動かす"
+license = "AGPL-3.0-or-later"
 publish = false
 
 [dependencies]
